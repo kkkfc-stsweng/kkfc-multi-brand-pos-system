@@ -91,8 +91,8 @@ Source: PRD FR-005–010, §3.1, §6.3; Masterfile §3 and §5. One order owns i
 | CONFIRMED -> ACKNOWLEDGED | Record acknowledgement actor/time. |
 | ACKNOWLEDGED -> PREPARING | Start at least one line; snapshot prepared_quantity and consume its remaining allocations exactly once. |
 | PREPARING or REWORKING -> CHECKING | All uncancelled lines have started; record QC submission. |
-| CHECKING -> REWORKING | Record checker and QC failure reason. Additional physical consumption/waste is separately source-linked. |
-| CHECKING -> READY | Successful recheck/pass for the current order revision; checker and ready time required. |
+| CHECKING -> REWORKING | Record checker and set `kitchen_tickets.qc_fail_reason`. Additional physical consumption/waste is separately source-linked. |
+| CHECKING -> READY | Successful recheck/pass for the current order revision; checker and ready time required; clear `kitchen_tickets.qc_fail_reason` (QC passed). |
 | READY -> COMPLETED | Serve/hand over all uncancelled selections; record completion; no new stock deduction. |
 | Any open state -> CANCELLED | Cancel all remaining servings; release unused allocations, preserve consumption, and classify waste/recovery correctly. |
 | Progressed open state -> CONFIRMED | A newly confirmed amendment invalidates previous READY/QC for the order revision; reserve only new selections. Previously prepared lines are never consumed again. |

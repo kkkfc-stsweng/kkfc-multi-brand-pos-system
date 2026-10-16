@@ -352,7 +352,7 @@ Table kitchen_tickets {
   ready_at timestamp
   handed_over_at timestamp
   cancelled_at timestamp
-  qc_fail_reason varchar(1000) [note: 'Set on CHECKING -> REWORKING; app limits input to 280 chars']
+  qc_fail_reason varchar(1000) [note: 'Set on CHECKING -> REWORKING; cleared on CHECKING -> READY; app limits input to 280 chars']
   notes varchar(2000)
   created_at timestamp [not null, default: `now()`]
   modified_at timestamp [not null, default: `now()`]
