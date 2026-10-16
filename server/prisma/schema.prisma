@@ -661,6 +661,7 @@ model KitchenTicket {
   ready_at               DateTime?           @db.Timestamp(6)
   handed_over_at         DateTime?           @db.Timestamp(6)
   cancelled_at           DateTime?           @db.Timestamp(6)
+  qc_fail_reason         String?             @db.VarChar(1000)
   notes                  String?             @db.VarChar(2000)
   created_at             DateTime            @default(now()) @db.Timestamp(6)
   modified_at            DateTime            @default(now()) @db.Timestamp(6)
