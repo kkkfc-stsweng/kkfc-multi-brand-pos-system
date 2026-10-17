@@ -1,25 +1,44 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { BrandsRepository } from './brands.repository';
 import { CreateBrandDTO } from './dto/create-brand.dto';
-import { assertExists } from '../../../shared/assertions/assert-exists';
+import { assertExists } from '../../shared/assertions/assert-exists';
 import { FindBrandsDTO } from './dto/find-brands.dto';
-import { assertValidPagination } from '../../../shared/assertions/assert-valid-pagination';
+import { assertValidPagination } from '../../shared/assertions/assert-valid-pagination';
 import { UpdateBrandDTO } from './dto/update-brand.dto';
-import { withUniqueBrandCode } from '../utils/generate-brand-code';
 
 @Injectable()
 export class BrandsService {
   private readonly logger = new Logger(BrandsService.name);
   constructor(private readonly brandsRepository: BrandsRepository) {}
 
-  async create(dto: CreateBrandDTO, ownerId: string) {
+  async create(dto: CreateBrandDTO, callerId: string, isSuperAdmin = false) {
     this.logger.log(`Creating new brand ${dto.name}`);
 
-    const brand = await withUniqueBrandCode(
-      dto.name,
-      this.brandsRepository,
-      (code) => this.brandsRepository.createBrand({ ...dto, code }, ownerId),
-    );
+    if (
+      !isSuperAdmin &&
+      dto.owner_id !== undefined &&
+      dto.owner_id !== callerId
+    ) {
+      throw new ForbiddenException({
+        code: 'ACCESS_DENIED',
+        message: 'You can only create a brand for yourself.',
+      });
+    }
+
+    const ownerId = isSuperAdmin ? dto.owner_id : callerId;
+    if (ownerId == null) {
+      throw new BadRequestException({
+        code: 'MISSING_OWNER_ID',
+        message: 'Owner ID is required when a superadmin creates a brand.',
+      });
+    }
+
+    const brand = await this.brandsRepository.createBrand(dto, ownerId);
 
     this.logger.log(
       `Created new brand ${brand.name} with brand_id ${brand.brand_id}`,
@@ -39,7 +58,7 @@ export class BrandsService {
     return brand;
   }
 
-  async findAll(userId: string, { page, limit, activeOnly }: FindBrandsDTO) {
+  async findAll({ page, limit, activeOnly }: FindBrandsDTO) {
     this.logger.log(
       `Listing brands: page=${page}, limit=${limit}, activeOnly=${activeOnly}`,
     );
@@ -49,7 +68,6 @@ export class BrandsService {
     assertValidPagination(skip, this.logger);
 
     const { brands, total } = await this.brandsRepository.findAllBrands(
-      userId,
       skip,
       limit,
       activeOnly,
@@ -74,16 +92,9 @@ export class BrandsService {
     this.logger.log(`Updating brand ${brandId}`);
 
     const brand = await this.brandsRepository.findOneBrand(brandId);
-
     assertExists(brand, 'Brand', brandId, this.logger);
 
-    const updatedBrand =
-      dto.name !== undefined && dto.name !== brand.name
-        ? await withUniqueBrandCode(dto.name, this.brandsRepository, (code) =>
-            this.brandsRepository.updateBrand(brand.brand_id, { ...dto, code }),
-          )
-        : await this.brandsRepository.updateBrand(brand.brand_id, dto);
-
+    const updatedBrand = await this.brandsRepository.updateBrand(brandId, dto);
     this.logger.log(`Updated brand ${updatedBrand.brand_id}`);
 
     return updatedBrand;

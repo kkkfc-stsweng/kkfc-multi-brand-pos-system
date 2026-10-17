@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuthenticatedRequest } from '../../modules/auth/auth.guard';
 import { isUUID } from 'class-validator';
+import { UserRole } from '@prisma/client';
 
 @Injectable()
 export class BrandsGuard implements CanActivate {
@@ -43,11 +44,8 @@ export class BrandsGuard implements CanActivate {
       });
     }
 
-    const assignedBrands = user.user_brand_assignments_user;
-
-    const hasAccess = assignedBrands.some(
-      (assignment) => assignment.brand_id === brandId,
-    );
+    const hasAccess =
+      user.brand_id === brandId || user.role === UserRole.SUPERADMIN;
 
     if (!hasAccess) {
       throw new ForbiddenException({

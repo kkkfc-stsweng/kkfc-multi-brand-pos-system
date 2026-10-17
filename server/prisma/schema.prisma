@@ -63,6 +63,7 @@ enum UserRole {
   INVENTORY_STAFF
   KITCHEN_HEAD
   OWNER
+  SUPERADMIN
 
   @@map("user_roles")
 }
@@ -158,11 +159,12 @@ model User {
   last_name     String   @db.VarChar(100)
   password_hash String   @db.VarChar(255)
   role          UserRole
+  brand_id      String?  @db.Uuid
   is_active     Boolean  @default(true)
   created_at    DateTime @default(now()) @db.Timestamp(6)
   modified_at   DateTime @default(now()) @db.Timestamp(6)
 
-  user_brand_assignments_user       UserBrandAssignment[]  @relation("UserBrandAssignmentUser")
+  brand                             Brand?                 @relation("UserBrand", fields: [brand_id], references: [brand_id], onDelete: NoAction, onUpdate: NoAction)
   user_sessions_user                UserSession[]          @relation("UserSessionUser")
   orders_created_by                 Order[]                @relation("OrderCreatedBy")
   orders_cancelled_by               Order[]                @relation("OrderCancelledBy")
@@ -184,6 +186,7 @@ model User {
   kitchen_tickets_created_by        KitchenTicket[]        @relation("KitchenTicketCreatedBy")
   audit_logs_actor                  AuditLog[]             @relation("AuditLogActor")
 
+  @@index([brand_id])
   @@map("users")
 }
 
@@ -203,21 +206,6 @@ model UserSession {
   @@map("user_sessions")
 }
 
-model UserBrandAssignment {
-  assignment_id String   @id @default(uuid()) @db.Uuid
-  user_id       String   @db.Uuid
-  brand_id      String   @db.Uuid
-  created_at    DateTime @default(now()) @db.Timestamp(6)
-  modified_at   DateTime @default(now()) @db.Timestamp(6)
-  is_active     Boolean  @default(true)
-
-  user  User  @relation("UserBrandAssignmentUser", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
-  brand Brand @relation("UserBrandAssignmentBrand", fields: [brand_id], references: [brand_id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@unique([user_id, brand_id])
-  @@map("user_brand_assignments")
-}
-
 model Brand {
   brand_id    String   @id @default(uuid()) @db.Uuid
   code        String   @unique @db.Char(4)
@@ -227,9 +215,9 @@ model Brand {
   modified_at DateTime @default(now()) @db.Timestamp(6)
   is_active   Boolean  @default(true)
 
-  user_brand_assignments_brand UserBrandAssignment[] @relation("UserBrandAssignmentBrand")
-  orders_brand                 Order[]               @relation("OrderBrand")
-  menu_items_brand             MenuItem[]            @relation("MenuItemBrand")
+  users_brand      User[]     @relation("UserBrand")
+  orders_brand     Order[]    @relation("OrderBrand")
+  menu_items_brand MenuItem[] @relation("MenuItemBrand")
 
   @@map("brands")
 }

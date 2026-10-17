@@ -36,6 +36,12 @@ export class UpdateUserDTO {
   @IsNotEmpty({ message: 'Password is required and cannot be empty.' })
   @MinLength(8, { message: 'Password must be at least 8 characters long.' })
   @MaxLength(32, { message: 'Password must be at most 32 characters long.' })
-  @ApiPropertyOptional({ minLength: 8, maxLength: 32, format: 'password' })
+  @ApiPropertyOptional({
+    minLength: 8,
+    maxLength: 32,
+    format: 'password',
+    description:
+      "Owners may change only their own password. Superadmins may reset another active user's password.",
+  })
   password?: string;
 }

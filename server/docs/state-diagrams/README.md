@@ -1,6 +1,6 @@
 # POS state diagrams
 
-These diagrams describe the **proposed** schema in [multi_brand_pos.proposed.dbml](../multi_brand_pos.proposed.dbml).
+These diagrams describe **proposed** workflows using the [ERD](../erd.dbml).
 They are proposed implementation contracts, not client-approved business policies or deployed application behavior.
 
 Each diagram has a standalone Mermaid source file and a rendered Markdown block below.

@@ -7,7 +7,7 @@ import { UsersService } from '../users.service';
 
 describe('UsersService', () => {
   const user = {
-    user_id: 'user-id',
+    user_id: '00000000-0000-4000-8000-000000000001',
     username: 'owner',
     first_name: 'Test',
     last_name: 'Owner',
@@ -15,7 +15,7 @@ describe('UsersService', () => {
     is_active: true,
     created_at: new Date('2030-01-01T00:00:00Z'),
     modified_at: new Date('2030-01-01T00:00:00Z'),
-    user_brand_assignments_user: [],
+    brand_id: null,
   };
   const createDTO: CreateUserDTO = {
     username: user.username,
@@ -56,19 +56,106 @@ describe('UsersService', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
+  describe('creation permissions', () => {
+    it.each([UserRole.OWNER, UserRole.SUPERADMIN])(
+      'allows superadmins to create %s accounts without a brand',
+      async (role) => {
+        const dto = { ...createDTO, role };
+        await service.createUser(dto, true);
+        expect(repository.create).toHaveBeenCalledWith(dto);
+      },
+    );
+
+    it.each([UserRole.OWNER, UserRole.SUPERADMIN])(
+      'blocks owners from creating %s accounts',
+      async (role) => {
+        await expect(
+          service.createUser({ ...createDTO, role }, false, 'brand'),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(repository.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([undefined, null])(
+      'requires a staff brand even for superadmins: %s',
+      async (brand_id) => {
+        await expect(
+          service.createUser(
+            { ...createDTO, role: UserRole.ORDER_STAFF, brand_id },
+            true,
+          ),
+        ).rejects.toMatchObject({ status: 400 });
+        expect(repository.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['other-brand', null])(
+      'blocks owners with a different or missing caller brand: %s',
+      async (callerBrandId) => {
+        await expect(
+          service.createUser(
+            { ...createDTO, role: UserRole.ORDER_STAFF, brand_id: 'brand' },
+            false,
+            callerBrandId,
+          ),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(repository.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('allows owners to create staff in their own brand', async () => {
+      const dto = {
+        ...createDTO,
+        role: UserRole.ORDER_STAFF,
+        brand_id: 'brand',
+      };
+      await service.createUser(dto, false, 'brand');
+      expect(repository.create).toHaveBeenCalledWith(dto);
+    });
+
+    it('allows superadmins to create staff in another brand', async () => {
+      const dto = {
+        ...createDTO,
+        role: UserRole.ORDER_STAFF,
+        brand_id: 'brand',
+      };
+      await service.createUser(dto, true);
+      expect(repository.create).toHaveBeenCalledWith(dto);
+    });
+  });
+
+  describe('superadmin bypasses', () => {
+    it('forwards activeOnly and unrestricted listing separately', async () => {
+      await service.findAllUsers(
+        { page: 1, limit: 10, activeOnly: false },
+        null,
+        true,
+      );
+      expect(repository.findAll).toHaveBeenCalledWith(0, 10, null, false, true);
+    });
+
+    it('allows editing another owner and resetting their password', async () => {
+      const dto = { password: 'new-password' };
+      await service.updateUser(user.user_id, dto, 'superadmin', true);
+      expect(repository.update).toHaveBeenCalledWith(user.user_id, dto);
+    });
+
+    it('allows deactivating another user', async () => {
+      await service.deleteUser(user.user_id, 'superadmin', true);
+      expect(repository.delete).toHaveBeenCalledWith(user.user_id);
+    });
+  });
+
   describe('brand access', () => {
     const caller = {
       ...user,
-      user_brand_assignments_user: [{ brand_id: 'shared-brand' }],
+      brand_id: 'shared-brand',
     };
     const staff = {
       ...user,
-      user_id: 'staff-id',
+      user_id: '00000000-0000-4000-8000-000000000002',
       role: UserRole.ORDER_STAFF,
-      user_brand_assignments_user: [
-        { brand_id: 'shared-brand' },
-        { brand_id: 'other-brand' },
-      ],
+      brand_id: 'shared-brand',
     };
 
     beforeEach(() => {
@@ -77,13 +164,10 @@ describe('UsersService', () => {
       );
     });
 
-    it('returns only shared brand assignments when reading another user', async () => {
+    it('returns another user in the same brand', async () => {
       await expect(
         service.findOneUser(staff.user_id, caller.user_id),
-      ).resolves.toEqual({
-        ...staff,
-        user_brand_assignments_user: [{ brand_id: 'shared-brand' }],
-      });
+      ).resolves.toEqual(staff);
     });
 
     it('allows profile edits for staff in a shared brand', async () => {
@@ -101,7 +185,7 @@ describe('UsersService', () => {
               ? caller
               : {
                   ...staff,
-                  user_brand_assignments_user: [{ brand_id: 'other-brand' }],
+                  brand_id: 'other-brand',
                 },
           ),
         );
@@ -119,21 +203,22 @@ describe('UsersService', () => {
       },
     );
 
-    it('denies edits to another owner even in a shared brand', async () => {
-      repository.findOne.mockImplementation((id) =>
-        Promise.resolve(
-          id === caller.user_id ? caller : { ...staff, role: UserRole.OWNER },
-        ),
-      );
-      await expect(
-        service.updateUser(
-          staff.user_id,
-          { first_name: 'Updated' },
-          caller.user_id,
-        ),
-      ).rejects.toMatchObject({ status: 403 });
-      expect(repository.update).not.toHaveBeenCalled();
-    });
+    it.each([UserRole.OWNER, UserRole.SUPERADMIN])(
+      'denies owner edits to another %s even in a shared brand',
+      async (role) => {
+        repository.findOne.mockImplementation((id) =>
+          Promise.resolve(id === caller.user_id ? caller : { ...staff, role }),
+        );
+        await expect(
+          service.updateUser(
+            staff.user_id,
+            { first_name: 'Updated' },
+            caller.user_id,
+          ),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(repository.update).not.toHaveBeenCalled();
+      },
+    );
 
     it('denies password resets for shared staff without partially updating their profile', async () => {
       await expect(
@@ -164,24 +249,21 @@ describe('UsersService', () => {
   });
 
   it('UT-USER-001: creates a user with the supplied fields', async () => {
-    await expect(service.createUser(createDTO)).resolves.toEqual(user);
+    await expect(service.createUser(createDTO, true)).resolves.toEqual(user);
     expect(repository.create).toHaveBeenCalledWith(createDTO);
   });
 
   it('UT-USER-002: returns a conflict when the username is already taken', async () => {
-    repository.findByUsername.mockResolvedValue({
-      user_id: user.user_id,
-      password_hash: 'password-hash',
-    });
+    repository.safeFindByUsername.mockResolvedValue(user);
 
-    await expect(service.createUser(createDTO)).rejects.toMatchObject({
+    await expect(service.createUser(createDTO, true)).rejects.toMatchObject({
       status: 409,
       response: {
         code: 'USERNAME_ALREADY_EXISTS',
         message: 'Username already exists.',
       },
     });
-    expect(repository.findByUsername).toHaveBeenCalledWith(
+    expect(repository.safeFindByUsername).toHaveBeenCalledWith(
       user.username,
       false,
     );
@@ -203,7 +285,7 @@ describe('UsersService', () => {
       );
       repository.create.mockRejectedValue(error);
 
-      await expect(service.createUser(createDTO)).rejects.toBe(error);
+      await expect(service.createUser(createDTO, true)).rejects.toBe(error);
     },
   );
 
@@ -211,16 +293,17 @@ describe('UsersService', () => {
     'UT-USER-004: returns pagination metadata and forwards activeOnly=%s',
     async (activeOnly) => {
       await expect(
-        service.findAllUsers({ page: 3, limit: 10, activeOnly }, user.user_id),
+        service.findAllUsers({ page: 3, limit: 10, activeOnly }, 'brand-id'),
       ).resolves.toEqual({
         data: [user],
         meta: { page: 3, limit: 10, total: 21, totalPages: 3 },
       });
       expect(repository.findAll).toHaveBeenCalledWith(
-        user.user_id,
         20,
         10,
+        'brand-id',
         activeOnly,
+        false,
       );
     },
   );
@@ -229,12 +312,18 @@ describe('UsersService', () => {
     repository.findAll.mockResolvedValue({ users: [], total: 0 });
 
     await expect(
-      service.findAllUsers(new FindUsersDTO(), user.user_id),
+      service.findAllUsers(new FindUsersDTO(), 'brand-id'),
     ).resolves.toEqual({
       data: [],
       meta: { page: 1, limit: 10, total: 0, totalPages: 0 },
     });
-    expect(repository.findAll).toHaveBeenCalledWith(user.user_id, 0, 10, true);
+    expect(repository.findAll).toHaveBeenCalledWith(
+      0,
+      10,
+      'brand-id',
+      true,
+      false,
+    );
   });
 
   it('UT-USER-006: returns an empty page past the last result while preserving totals', async () => {
@@ -282,10 +371,11 @@ describe('UsersService', () => {
     );
 
     expect(repository.findAll).toHaveBeenCalledWith(
-      user.user_id,
       2_147_483_646,
       1,
+      user.user_id,
       true,
+      false,
     );
   });
 
@@ -481,7 +571,7 @@ describe('UsersService', () => {
   );
 
   it.each([
-    ['create', () => service.createUser(createDTO)],
+    ['create', () => service.createUser(createDTO, true)],
     ['findAll', () => service.findAllUsers(new FindUsersDTO(), user.user_id)],
     ['findOne', () => service.findOneUser(user.user_id, user.user_id)],
     [

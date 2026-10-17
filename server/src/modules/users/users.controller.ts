@@ -32,66 +32,80 @@ import { Roles } from '../../shared/decorators/roles.decorator';
 
 @Controller('users')
 @UsersDocs()
-@UseGuards(Authenticated)
+@UseGuards(Authenticated, RolesGuard)
+@Roles(UserRole.OWNER, UserRole.SUPERADMIN)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER)
   @CreateUserDocs()
-  async create(@Body() dto: CreateUserDTO) {
-    return this.usersService.createUser(dto);
+  async create(
+    @Body() dto: CreateUserDTO,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.usersService.createUser(
+      dto,
+      request.session.user.role === UserRole.SUPERADMIN,
+      request.session.user.brand_id,
+    );
+  }
+
+  @Get()
+  @FindAllUsersDocs()
+  async findAll(
+    @Req() request: AuthenticatedRequest,
+    @Query() query: FindUsersDTO,
+  ) {
+    const isSuperAdmin = request.session.user.role === UserRole.SUPERADMIN;
+
+    return this.usersService.findAllUsers(
+      query,
+      request.session.user.brand_id,
+      isSuperAdmin,
+    );
+  }
+
+  @Get(':id')
+  @FindOneUserDocs()
+  async findOne(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') usernameOrUserId: string,
+    @Query('activeOnly', new DefaultValuePipe(true), ParseBoolPipe)
+    activeOnly: boolean,
+  ) {
+    return this.usersService.findOneUser(
+      usernameOrUserId,
+      request.session.user.user_id,
+      activeOnly,
+      request.session.user.role === UserRole.SUPERADMIN,
+    );
   }
 
   @Patch(':id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER)
   @UpdateUserDocs()
   async update(
     @Req() request: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDTO,
   ) {
-    return this.usersService.updateUser(id, dto, request.session.user.user_id);
-  }
-
-  @Get()
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER)
-  @FindAllUsersDocs()
-  async findAll(
-    @Req() request: AuthenticatedRequest,
-    @Query() query: FindUsersDTO,
-  ) {
-    return this.usersService.findAllUsers(query, request.session.user.user_id);
-  }
-
-  @Get(':id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER)
-  @FindOneUserDocs()
-  async findOne(
-    @Req() request: AuthenticatedRequest,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Query('activeOnly', new DefaultValuePipe(true), ParseBoolPipe)
-    activeOnly: boolean,
-  ) {
-    return this.usersService.findOneUser(
+    return this.usersService.updateUser(
       id,
+      dto,
       request.session.user.user_id,
-      activeOnly,
+      request.session.user.role === UserRole.SUPERADMIN,
     );
   }
 
   @Delete(':id')
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.OWNER)
   @DeleteUserDocs()
   async delete(
     @Req() request: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.usersService.deleteUser(id, request.session.user.user_id);
+    return this.usersService.deleteUser(
+      id,
+      request.session.user.user_id,
+      request.session.user.role === UserRole.SUPERADMIN,
+    );
   }
 }

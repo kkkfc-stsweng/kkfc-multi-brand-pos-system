@@ -16,6 +16,18 @@ export class UpdateBrandDTO {
   @ApiPropertyOptional({ maxLength: 150 })
   name?: string;
 
+  @ValidateIf((_object: unknown, value: unknown) => value !== undefined)
+  @IsString({ message: 'Code must be a string.' })
+  @IsNotEmpty({ message: 'Code is required and cannot be empty.' })
+  @MaxLength(4, { message: 'Code must be at most 4 characters long.' })
+  @ApiPropertyOptional({
+    minLength: 1,
+    maxLength: 4,
+    description:
+      'Unique client-supplied code. Omit to preserve the current code; changing the name does not change it.',
+  })
+  code?: string;
+
   @IsOptional()
   @IsUrl({}, { message: 'Logo URL must be a valid URL.' })
   @MaxLength(2048, {
@@ -26,6 +38,7 @@ export class UpdateBrandDTO {
     format: 'uri',
     maxLength: 2048,
     nullable: true,
+    description: 'Omit to preserve the logo; null clears it.',
   })
   logo_url?: string | null;
 }

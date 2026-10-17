@@ -20,6 +20,7 @@ describe('Users HTTP endpoints (IT-USER)', () => {
   let authenticated = true;
   let currentRole: UserRole = UserRole.OWNER;
   const userId = '00000000-0000-4000-8000-000000000010';
+  const brandId = '00000000-0000-4000-8000-000000000020';
 
   const service = {
     createUser: jest.fn(),
@@ -46,12 +47,19 @@ describe('Users HTTP endpoints (IT-USER)', () => {
             return false;
           }
           const request = context.switchToHttp().getRequest<{
-            session: { user: { user_id: string; role: UserRole } };
+            session: {
+              user: {
+                user_id: string;
+                role: UserRole;
+                brand_id: string | null;
+              };
+            };
           }>();
           request.session = {
             user: {
               user_id: '00000000-0000-4000-8000-000000000001',
               role: currentRole,
+              brand_id: currentRole === UserRole.SUPERADMIN ? null : brandId,
             },
           };
           return true;
@@ -92,6 +100,7 @@ describe('Users HTTP endpoints (IT-USER)', () => {
       last_name: 'Santos',
       password: 'Password123!',
       role: UserRole.ORDER_STAFF,
+      brand_id: brandId,
     };
 
     const response = await fetch(url, {
@@ -102,7 +111,7 @@ describe('Users HTTP endpoints (IT-USER)', () => {
 
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({ ok: true });
-    expect(service.createUser).toHaveBeenCalledWith(payload);
+    expect(service.createUser).toHaveBeenCalledWith(payload, false, brandId);
   });
 
   it.each([
@@ -159,7 +168,8 @@ describe('Users HTTP endpoints (IT-USER)', () => {
         limit: 10,
         activeOnly: true,
       },
-      '00000000-0000-4000-8000-000000000001',
+      brandId,
+      false,
     );
 
     const filteredResp = await fetch(`${url}?page=2&limit=5&activeOnly=false`);
@@ -170,7 +180,8 @@ describe('Users HTTP endpoints (IT-USER)', () => {
         limit: 5,
         activeOnly: false,
       },
-      '00000000-0000-4000-8000-000000000001',
+      brandId,
+      false,
     );
   });
 
@@ -190,6 +201,7 @@ describe('Users HTTP endpoints (IT-USER)', () => {
       userId,
       '00000000-0000-4000-8000-000000000001',
       true,
+      false,
     );
 
     const inactiveResp = await fetch(`${url}/${userId}?activeOnly=false`);
@@ -197,6 +209,7 @@ describe('Users HTTP endpoints (IT-USER)', () => {
     expect(service.findOneUser).toHaveBeenLastCalledWith(
       userId,
       '00000000-0000-4000-8000-000000000001',
+      false,
       false,
     );
   });
@@ -214,6 +227,7 @@ describe('Users HTTP endpoints (IT-USER)', () => {
       userId,
       dto,
       '00000000-0000-4000-8000-000000000001',
+      false,
     );
   });
 
@@ -231,6 +245,7 @@ describe('Users HTTP endpoints (IT-USER)', () => {
         userId,
         { username },
         '00000000-0000-4000-8000-000000000001',
+        false,
       );
     },
   );
@@ -300,11 +315,11 @@ describe('Users HTTP endpoints (IT-USER)', () => {
     expect(service.deleteUser).toHaveBeenCalledWith(
       userId,
       '00000000-0000-4000-8000-000000000001',
+      false,
     );
   });
 
   it.each([
-    ['GET', '/not-a-uuid'],
     ['PATCH', '/not-a-uuid'],
     ['DELETE', '/not-a-uuid'],
   ])(
@@ -318,8 +333,12 @@ describe('Users HTTP endpoints (IT-USER)', () => {
     },
   );
 
-  it.each(Object.values(UserRole).filter((role) => role !== UserRole.OWNER))(
-    'IT-USER-010: denies non-OWNER role %s across all user endpoints',
+  it.each(
+    Object.values(UserRole).filter(
+      (role) => role !== UserRole.OWNER && role !== UserRole.SUPERADMIN,
+    ),
+  )(
+    'IT-USER-010: denies staff role %s across all user endpoints',
     async (role) => {
       currentRole = role;
 
@@ -334,4 +353,70 @@ describe('Users HTTP endpoints (IT-USER)', () => {
       ).toBe(403);
     },
   );
+
+  it('allows username lookups through the GET route', async () => {
+    const response = await fetch(`${url}/owner`);
+    expect(response.status).toBe(200);
+    expect(service.findOneUser).toHaveBeenCalledWith(
+      'owner',
+      '00000000-0000-4000-8000-000000000001',
+      true,
+      false,
+    );
+  });
+
+  it('passes authenticated superadmin access to every service operation', async () => {
+    currentRole = UserRole.SUPERADMIN;
+    const callerId = '00000000-0000-4000-8000-000000000001';
+    const payload = {
+      username: 'new_owner',
+      first_name: 'Test',
+      last_name: 'Owner',
+      password: 'Password123!',
+      role: UserRole.OWNER,
+    };
+    expect(
+      (
+        await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      ).status,
+    ).toBe(201);
+    expect(service.createUser).toHaveBeenCalledWith(payload, true, null);
+    expect((await fetch(`${url}?activeOnly=false`)).status).toBe(200);
+    expect(service.findAllUsers).toHaveBeenCalledWith(
+      { page: 1, limit: 10, activeOnly: false },
+      null,
+      true,
+    );
+    expect((await fetch(`${url}/${userId}`)).status).toBe(200);
+    expect(service.findOneUser).toHaveBeenCalledWith(
+      userId,
+      callerId,
+      true,
+      true,
+    );
+    const dto = { password: 'Password123!' };
+    expect(
+      (
+        await fetch(`${url}/${userId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dto),
+        })
+      ).status,
+    ).toBe(200);
+    expect(service.updateUser).toHaveBeenCalledWith(
+      userId,
+      dto,
+      callerId,
+      true,
+    );
+    expect((await fetch(`${url}/${userId}`, { method: 'DELETE' })).status).toBe(
+      200,
+    );
+    expect(service.deleteUser).toHaveBeenCalledWith(userId, callerId, true);
+  });
 });

@@ -23,7 +23,8 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Backend API for the KKFC multi-brand POS system, built with NestJS and Prisma.
+Implemented modules are authentication, users, and brands.
 
 ## Project setup
 
@@ -51,9 +52,10 @@ npm run prisma:validate
 npm run prisma:studio
 ```
 
-The schema in `prisma/schema.prisma` implements the 33 tables and 18 enums
-in `docs/multi_brand_pos.dbml`. See [the simplified ER diagram](docs/schema-diagram.md)
-for the main relationships and implementation conventions. Regenerate the
+The database schema is defined in [prisma/schema.prisma](prisma/schema.prisma),
+with an ERD in [docs/erd.dbml](docs/erd.dbml). Each user belongs to at most
+one brand through nullable `users.brand_id`; a brand can contain many users.
+There is no assignment model in the current Prisma schema. Regenerate the
 client after schema changes; build and development start scripts do this
 automatically. No database changes are made by generation or building.
 
@@ -68,7 +70,7 @@ npm run db:push:dev
 npm run db:migrate:dev -- --name init
 
 # Apply committed migrations in production (requires dev dependencies)
-npm run db:migrate:deploy
+npx prisma migrate deploy
 ```
 
 `db:push:prod` is also available to match the reference project; use
@@ -92,15 +94,50 @@ $ npm run start:prod
 
 Swagger UI: `http://localhost:3000/api/docs` (JSON: `/api/docs-json`).
 Log in through `POST /api/auth/login`, then paste the returned token into **Authorize**.
+Sessions expire after 24 hours. Protected routes require `Authorization: Bearer <token>`.
+Login returns `token`, `expires_at`, and a user profile with nullable `brand_id`.
+Password hashes are excluded from API responses.
+
+| Endpoint | Access and behavior |
+| --- | --- |
+| `POST /api/auth/login` | Active users of any role; creates a session. |
+| `GET /api/auth/me` | Any authenticated user; returns their current profile. |
+| `POST /api/auth/logout` | Revokes the current session; returns 204. |
+| `POST /api/auth/logout-all` | Revokes all sessions for the current user; returns 204. |
+| `POST /api/users` | Owners create staff in their brand. Superadmins can create any role. Staff require an active `brand_id`; owners and superadmins may be unassigned. |
+| `GET /api/users` | Owners list users in their brand. Superadmins list users across all brands. |
+| `GET /api/users/:id` | Accepts username or user ID. Owners can read themselves and users in their brand; superadmins can read across brands. |
+| `PATCH /api/users/:id` | Requires a user UUID. Owners edit themselves or staff in their brand; they cannot edit another owner/superadmin or reset another user's password. Superadmins can edit any active user. |
+| `DELETE /api/users/:id` | Requires a user UUID. Owners deactivate themselves; superadmins can deactivate any active user. |
+| `POST /api/brands` | Owners create a brand for themselves. Superadmins must provide `owner_id` for an active owner without a brand. `code` is required and supplied by the client, with one to four characters. |
+| `GET /api/brands` | Superadmins only; lists all brands. |
+| `GET /api/brands/:brandId` | Any authenticated user can read their assigned brand; superadmins can read any active brand. |
+| `PATCH /api/brands/:brandId` | Owners update their brand; superadmins can update any active brand. `code` is optional and is not generated on rename. |
+| `DELETE /api/brands/:brandId` | Owners deactivate their brand; superadmins can deactivate any active brand. The brand and its active users are deactivated together. |
+
+Listings accept `page` (default 1), `limit` (default 10, maximum 100), and
+`activeOnly` (default true). `activeOnly=false` includes both active and inactive
+records. Listings return `{ data, meta: { page, limit, total, totalPages } }`.
+The single-user lookup also accepts `activeOnly`; the single-brand lookup
+returns active brands only. User UUIDs take priority over usernames for profile
+searches. Session validation and user update/delete operations use strict user-ID lookups.
+
+Brand codes are unique and manually supplied. Setting `logo_url` to null clears
+the logo on update; omitted update fields keep their existing values. The old
+brand-assignment endpoints have been removed. A user is linked directly to a
+brand through `brand_id` during user creation or the brand's owner-linking transaction.
 
 ## Run tests
 
 ```bash
-# unit tests
-$ npm run test
+# all tests
+$ npm test
 
-# e2e tests
-$ npm run test:e2e
+# service tests
+$ npm run test:unit
+
+# HTTP endpoint tests
+$ npm run test:integration
 
 # test coverage
 $ npm run test:cov

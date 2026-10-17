@@ -112,33 +112,13 @@ async function seedTestDatabase() {
       seededBrands.push(b);
     }
 
-    console.log('Seeding user brand assignments...');
-    const seededUsers = await prisma.user.findMany({
+    console.log('Assigning test users to the first test brand...');
+    await prisma.user.updateMany({
       where: {
         username: { in: TEST_USERS.map((u) => u.username) },
       },
+      data: { brand_id: seededBrands[0].brand_id },
     });
-
-    for (const user of seededUsers) {
-      for (const brand of seededBrands) {
-        await prisma.userBrandAssignment.upsert({
-          where: {
-            user_id_brand_id: {
-              user_id: user.user_id,
-              brand_id: brand.brand_id,
-            },
-          },
-          update: {
-            is_active: true,
-          },
-          create: {
-            user_id: user.user_id,
-            brand_id: brand.brand_id,
-            is_active: true,
-          },
-        });
-      }
-    }
 
     console.log('Test database seeded successfully.');
   } finally {

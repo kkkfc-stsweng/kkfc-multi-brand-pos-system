@@ -13,13 +13,17 @@ export class UsersRepository {
     dto: CreateUserDTO,
     tx: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
-    const { password, ...userData } = dto;
+    const { password, brand_id, ...userData } = dto;
     const passwordHash = await argon2.hash(password);
 
     return tx.user.create({
       data: {
         ...userData,
         password_hash: passwordHash,
+        brand:
+          brand_id == null
+            ? undefined
+            : { connect: { brand_id, is_active: true } },
       },
       omit: {
         password_hash: true,
@@ -28,30 +32,20 @@ export class UsersRepository {
   }
 
   async findAll(
-    callerId: string,
     skip: number,
     take: number,
+    callerBrandId: string | null,
     activeOnly = true,
+    isSuperAdmin = false,
     tx: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
+    if (!isSuperAdmin && callerBrandId === null) {
+      return { users: [], total: 0 };
+    }
+
     const where: Prisma.UserWhereInput = {
       is_active: activeOnly ? true : undefined,
-      OR: [
-        { user_id: callerId },
-        {
-          user_brand_assignments_user: {
-            some: {
-              is_active: true,
-              brand: {
-                is_active: true,
-                user_brand_assignments_brand: {
-                  some: { user_id: callerId, is_active: true },
-                },
-              },
-            },
-          },
-        },
-      ],
+      ...(isSuperAdmin ? {} : { brand_id: callerBrandId }),
     };
 
     const usersQuery = tx.user.findMany({
@@ -84,15 +78,6 @@ export class UsersRepository {
         is_active: activeOnly ? true : undefined,
       },
       omit: { password_hash: true },
-      include: {
-        user_brand_assignments_user: {
-          where: {
-            is_active: true,
-            brand: { is_active: true },
-          },
-          select: { brand_id: true },
-        },
-      },
     });
   }
 

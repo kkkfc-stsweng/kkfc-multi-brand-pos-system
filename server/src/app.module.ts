@@ -7,7 +7,7 @@ import { PrismaModule } from './shared/prisma/prisma.module';
 import { StorageModule } from './shared/storage/storage.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { BrandModule } from './modules/brand/brand.module';
+import { BrandsModule } from './modules/brands/brands.module';
 
 @Module({
   imports: [
@@ -23,7 +23,7 @@ import { BrandModule } from './modules/brand/brand.module';
     StorageModule,
     UsersModule,
     AuthModule,
-    BrandModule,
+    BrandsModule,
   ],
   controllers: [],
   providers: [

@@ -23,7 +23,7 @@ describe('Auth HTTP endpoints', () => {
     is_active: true,
     created_at: new Date(),
     modified_at: new Date(),
-    user_brand_assignments_user: [{ brand_id: randomUUID() }],
+    brand_id: randomUUID() as string | null,
   };
   const staff = {
     ...owner,
@@ -50,19 +50,13 @@ describe('Auth HTTP endpoints', () => {
     passwordHash = await argon2.hash('correct-password');
     const matchingUsers = (where: {
       is_active?: boolean;
-      OR: { user_id?: string }[];
+      brand_id?: string | null;
     }) =>
       [...users.values()].filter((user) => {
-        const caller = users.get(where.OR[0].user_id!);
         return (
           (where.is_active === undefined ||
             user.is_active === where.is_active) &&
-          (user.user_id === caller?.user_id ||
-            user.user_brand_assignments_user.some((assignment) =>
-              caller?.user_brand_assignments_user.some(
-                (own) => own.brand_id === assignment.brand_id,
-              ),
-            ))
+          (where.brand_id === undefined || user.brand_id === where.brand_id)
         );
       });
     const listingRepository = new UsersRepository({
@@ -72,14 +66,14 @@ describe('Auth HTTP endpoints', () => {
           skip,
           take,
         }: {
-          where: { is_active?: boolean; OR: { user_id?: string }[] };
+          where: { is_active?: boolean; brand_id?: string | null };
           skip: number;
           take: number;
         }) => Promise.resolve(matchingUsers(where).slice(skip, skip + take)),
         count: ({
           where,
         }: {
-          where: { is_active?: boolean; OR: { user_id?: string }[] };
+          where: { is_active?: boolean; brand_id?: string | null };
         }) => Promise.resolve(matchingUsers(where).length),
       },
       $transaction: (queries: Promise<unknown>[]) => Promise.all(queries),
@@ -105,11 +99,19 @@ describe('Auth HTTP endpoints', () => {
         }),
         findAll: jest.fn(
           (
-            callerId: string,
             skip: number,
             take: number,
+            callerBrandId: string | null,
             activeOnly: boolean = true,
-          ) => listingRepository.findAll(callerId, skip, take, activeOnly),
+            isSuperAdmin = false,
+          ) =>
+            listingRepository.findAll(
+              skip,
+              take,
+              callerBrandId,
+              activeOnly,
+              isSuperAdmin,
+            ),
         ),
       })
       .overrideProvider(AuthRepository)
@@ -197,7 +199,7 @@ describe('Auth HTTP endpoints', () => {
       ...staff,
       user_id: randomUUID(),
       username: 'unrelated',
-      user_brand_assignments_user: [{ brand_id: randomUUID() }],
+      brand_id: randomUUID(),
     };
     users.set(unrelated.user_id, unrelated);
     const { token } = await login();
@@ -263,7 +265,10 @@ describe('Auth HTTP endpoints', () => {
       first_name: 'Test',
       last_name: 'Owner',
       role: UserRole.OWNER,
-      brand_ids: [owner.user_brand_assignments_user[0].brand_id],
+      brand_id: owner.brand_id,
+      is_active: owner.is_active,
+      created_at: owner.created_at.toISOString(),
+      modified_at: owner.modified_at.toISOString(),
     });
     expect(body.user).not.toHaveProperty('password_hash');
     expect(body).not.toHaveProperty('token_hash');
@@ -326,10 +331,10 @@ describe('Auth HTTP endpoints', () => {
     expect(await response.json()).toEqual(user);
   });
 
-  it('IT-AUTH-006: returns an empty brand list when no brands are assigned', async () => {
-    users.set(owner.user_id, { ...owner, user_brand_assignments_user: [] });
+  it('IT-AUTH-006: returns a null brand when no brand is assigned', async () => {
+    users.set(owner.user_id, { ...owner, brand_id: null });
     const { token, user } = await login();
-    expect(user.brand_ids).toEqual([]);
+    expect(user.brand_id).toBeNull();
     const response = await fetch(`${url}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });

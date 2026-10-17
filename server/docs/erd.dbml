@@ -46,6 +46,7 @@ Enum user_roles {
   INVENTORY_STAFF
   KITCHEN_HEAD
   OWNER
+  SUPERADMIN
 }
 
 Enum recipe_types {
@@ -119,7 +120,8 @@ Enum payment_statuses {
 // 1. USERS, RBAC & BRANDS
 // ==========================================
 
-// Stores staff accounts, credentials, and operational roles (Owner, Kitchen Head, Receiving, Preparer, Staff).
+// Stores user accounts, credentials, and operational roles, including Superadmin and Owner.
+// Every user can be assigned to at most one brand; null means unassigned.
 // Used to enforce role-based access control across privileged actions, approvals, and confidential recipes (FR-004, FR-029, AC-08).
 Table users {
   user_id uuid [pk]
@@ -128,9 +130,13 @@ Table users {
   last_name varchar(100) [not null]
   password_hash varchar(255) [not null]
   role user_roles [not null]
+  brand_id uuid [ref: > brands.brand_id]
   is_active boolean [not null, default: true]
   created_at timestamp [not null, default: `now()`]
   modified_at timestamp [not null, default: `now()`]
+  indexes {
+    (brand_id)
+  }
 }
 
 // Stores revocable sessions. The backend enforces expiration and records activity.
@@ -156,20 +162,6 @@ Table brands {
   is_active boolean [not null, default: true]
   created_at timestamp [not null, default: `now()`]
   modified_at timestamp [not null, default: `now()`]
-}
-
-// Maps staff members to the specific brands they are authorized to manage or encode orders for.
-// Supports operational accountability and brand-scoped permissions within the shared kitchen (FR-001, FR-029).
-Table user_brand_assignments {
-  assignment_id uuid [pk]
-  user_id uuid [not null, ref: > users.user_id]
-  brand_id uuid [not null, ref: > brands.brand_id]
-  created_at timestamp [not null, default: `now()`]
-  modified_at timestamp [not null, default: `now()`]
-  is_active boolean [not null, default: true]
-  indexes {
-    (user_id, brand_id) [unique]
-  }
 }
 
 // ==========================================
